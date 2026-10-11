@@ -393,6 +393,9 @@ function derive(v){
   d.atmLine=d.sorted.length?d.sorted.slice(0,4).map(([k,p],i)=>(i===0?'mostly ':p<3?'traces of ':'')+(GAS_EN[k]||k)).join(', '):null;
   d.gasWorld=v.ptype==='gas'||v.ptype==='icegiant'||(isC('ptype')&&/가스|거성|gas|giant|jovian/i.test(v.ptypeCustom));
   d.vacuum=v.pressure<0.01;
+  // 구름이 85% 이상이면 하늘 전체가 덮여 항성 원반이 보이지 않는다
+  d.overcast=!d.vacuum&&!d.gasWorld&&v.clouds>=85;
+  d.thickAir=!d.vacuum&&!d.gasWorld&&v.pressure>8;
   // 액체 물 가능 범위 (단순화: 끓는점은 압력에 따라 상승)
   const boil=v.pressure<=0?0:100+28*Math.log(Math.max(v.pressure,0.01));
   d.boil=boil;
@@ -420,6 +423,11 @@ function skyDesc(v,d){
   const st=starD(v);const a=d.atm;
   if(d.gasWorld)return{en:`no solid ground: the viewpoint floats among towering cloud decks, bands of ${v.ptype==='icegiant'?'deep blue and teal methane clouds':'cream, tan and rust-colored ammonia clouds'} stretching to a hazy horizon, lightning flickering deep in the cloud canyons below`,ko:'지면 없음, 거대한 구름층 사이의 시점'};
   if(d.vacuum)return{en:'an airless pitch-black sky with stars visible even in full daylight, no atmospheric haze, razor-sharp shadows',ko:'대기 없는 칠흑 하늘, 낮에도 별이 보임'};
+  if(d.overcast){
+    const cc=(a.SO2>10||a.H2S>5)?'yellow-brown sulfurous':(a.CO2>60)?'pale yellow-grey':(a.CH4>2&&a.N2>50)?'dull orange':(a.H2O>20)?'white steam':'dark grey';
+    const glow={O:'blue-white',B:'blue-white',A:'white',F:'white',G:'pale yellow',K:'orange',M:'dull red',WD:'white',BIN:'orange'}[v.star]||'pale';
+    return{en:`a completely overcast sky, a low unbroken ceiling of heavy ${cc} clouds from horizon to horizon, the sun is NOT visible, no sun disk, no stars, only a dim diffuse ${glow} glow seeping through the cloud layer${d.thickAir?', the thick crushing air turning the distance into murky haze within a few hundred meters':''}`,ko:`완전히 덮인 ${d.thickAir?'두껍고 뿌연 ':''}구름 하늘, 항성 안 보임`};
+  }
   if(d.customDominant)return{en:`a strange sky colored by an atmosphere of ${d.dominant}, diffuse alien light`,ko:`${d.dominant} 대기의 낯선 하늘`};
   if(a.SiO>5||a.Na>5)return{en:'a glowing, hazy sky of vaporized rock and sodium, dull orange-yellow glare, heat shimmer everywhere',ko:'증발한 암석의 노란 아지랑이 하늘'};
   if(a.SO2>10||a.H2S>5)return{en:'a sickly yellow-brown sulfurous sky, thick acid haze, diffuse glow with no visible sun disk',ko:'누런 황 안개 하늘'};
@@ -440,6 +448,7 @@ function skyDesc(v,d){
 }
 function starInSky(v,d){
   const s=d.starSize;const st=starD(v);
+  if(d.overcast)return `the host star is completely hidden behind the cloud deck, only flat, shadowless, diffuse ${st.disk} light, no visible sun anywhere in the image`;
   let size;
   if(s<0.3)size='the host star is only a small brilliant point';
   else if(s<0.8)size='the host star appears smaller than our Sun';
@@ -489,14 +498,15 @@ function terrainDesc(v,d){
 function weatherDesc(v,d){
   if(d.gasWorld||d.vacuum)return null;
   const parts=[];
-  if(v.clouds>80)parts.push('overcast sky, thick cloud cover');
+  if(d.overcast)parts.push('total cloud cover, gloomy and dim, no direct sunlight');
+  else if(v.clouds>80)parts.push('mostly overcast, thick cloud cover');
   else if(v.clouds>40)parts.push('scattered clouds');
   else if(v.clouds>10)parts.push('a few thin clouds');
   else parts.push('cloudless sky');
   if(v.pressure>10)parts.push('heavy, soupy atmosphere');
   if(v.tidal)parts.push('permanent winds blowing from the day side toward the frozen night side');
   if(d.atm.CH4>2&&v.temp<-150)parts.push('methane rain and dark hydrocarbon lakes');
-  if(v.magnet!=='none'&&(v.star==='M'||v.star==='K'))parts.push('faint auroras shimmering near the horizon');
+  if(v.magnet!=='none'&&(v.star==='M'||v.star==='K')&&!d.overcast)parts.push('faint auroras shimmering near the horizon');
   return parts.join(', ');
 }
 function lifeDesc(v){
@@ -506,6 +516,7 @@ function lifeDesc(v){
 function lifeKo(v){if(isC('life'))return cv('life');return{none:'생명 없음',microbial:'미생물 매트',plants:'외계 식생',civ:'문명 도시'}[v.life];}
 function todDesc(v,d){
   if(isC('tod'))return cv('tod');
+  if(v.tidal&&d.overcast&&v.tod!=='night')return 'permanent gloomy daylight on the star-facing side, the hidden star never moving';
   if(v.tidal&&v.tod!=='night')return v.tod==='sunset'?'viewed from the terminator zone, the star sitting forever on the horizon in an endless sunset':'the star hangs motionless at the same spot in the sky, never setting';
   return{day:'midday light',sunset:'the star low on the horizon, long shadows, sky gradient',night:'night, the surface lit only by '+(v.moons>0?(v.moons===1?'a single moon':v.moons+' moons')+' and starlight':'starlight')}[v.tod];
 }
@@ -551,8 +562,9 @@ function build(v,d){
     weather?`Weather: ${weather}.`:'',
     `${lifeDesc(v)}.`,
     `${todDesc(v,d)}.`,
-    v.moons>0&&v.tod!=='night'?`${v.moons===1?'A moon':v.moons+' moons'} faintly visible in the sky.`:'',
-    v.rings?'The planet\'s own ring system arcs across the sky as a thin bright band.':'',
+    v.moons>0&&v.tod!=='night'&&!d.overcast?`${v.moons===1?'A moon':v.moons+' moons'} faintly visible in the sky.`:'',
+    v.rings&&!d.overcast?'The planet\'s own ring system arcs across the sky as a thin bright band.':'',
+    d.overcast?'The entire sky is covered by clouds, the star hidden, no visible sun or moons.':'',
     `${st.tail}, wide landscape composition, no text, no people. --ar 16:9`
   ].filter(Boolean);
 
@@ -571,7 +583,7 @@ function build(v,d){
   ].filter(Boolean);
 
   const neg=['text','watermark','logo','people','astronaut','spaceship','cartoon','low quality','blurry','Earth continents','recognizable Earth map',
-    d.vacuum?'clouds, blue sky':'', v.liquidPct===0?'liquid water, ocean':'', v.icePct===0&&v.temp>0?'ice, snow':'', v.life==='none'?'plants, trees, animals, buildings':'',
+    d.vacuum?'clouds, blue sky':'', d.overcast?'visible sun, sun disk, star disk, clear sky, blue sky, sunbeams, god rays, stars, moons in the sky, sunset glow on horizon':'', v.liquidPct===0?'liquid water, ocean':'', v.icePct===0&&v.temp>0?'ice, snow':'', v.life==='none'?'plants, trees, animals, buildings':'',
     d.gasWorld?'solid ground, rocks, mountains':''].filter(Boolean).join(', ');
 
   const surfaceKo=`${ptypeKo(v)} 지표면. ${d.gasWorld?'지면 없이 구름층 사이 시점':crustD(v).ko}. 하늘: ${sky.ko}. 빛: ${starD(v).ko}. ${lifeKo(v)}.`;
@@ -610,6 +622,7 @@ function render(){
   if(v.liquidPct+v.icePct>100)notes.push('액체 물과 얼음 피복률 합이 100%를 넘습니다.');
   if(v.star==='M'&&v.au>0.3)notes.push('적색 왜성은 어두워서 이 거리면 매우 추운 행성이 됩니다.');
   if(d.vacuum&&v.clouds>0)notes.push('대기가 거의 없으면 구름이 생기지 않아 프롬프트에서 구름을 뺐습니다.');
+  if(d.overcast)notes.push('구름이 85% 이상이라 항성·위성·고리를 하늘에서 숨기고, 제외 요소에 "visible sun, clear sky"를 넣었습니다. Midjourney는 제외 요소를 --no 뒤에 붙여야 적용됩니다.');
   $('notes').innerHTML=notes.map(n=>`<li>${n}</li>`).join('');
 
   const p=build(v,d);
