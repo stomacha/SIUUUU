@@ -60,6 +60,12 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
 .atm .field label{font-family:var(--mono);font-weight:500;font-size:12px}
 .chk{display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px}
 .chk input{accent-color:var(--accent)}
+.atm-custom{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.atm-custom .gasrow{display:grid;grid-template-columns:minmax(0,1fr) 84px auto;gap:6px;align-items:center}
+.atm-custom input[type=text]{border-color:var(--accent)}
+.gasrow button,.addgas{font:inherit;font-size:12px;padding:6px 10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;cursor:pointer}
+.gasrow button:hover,.addgas:hover{border-color:var(--accent);color:var(--accent)}
+.addgas{margin-top:8px}
 .atm-total{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px}
 .atm-total.bad{color:var(--warn)}
 
@@ -128,6 +134,8 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
   <fieldset>
     <legend>대기 성분 (부피 %)</legend>
     <div class="atm" id="atm"></div>
+    <div class="atm-custom" id="atmCustom"></div>
+    <button type="button" class="addgas" id="addGas">+ 성분 직접 추가</button>
     <div class="atm-total" id="atmTotal"></div>
   </fieldset>
 
@@ -141,19 +149,13 @@ input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid 
           <option value="silicate">규산염 암석 (붉은 산화철)</option>
           <option value="iron">철·니켈 노출 지각</option>
           <option value="carbon">탄소 (흑연·다이아몬드)</option>
-          <option value="ice">물 얼음 지각</option>
           <option value="salt">소금 평원 / 증발암</option>
           <option value="sulfur">황 / 화산 퇴적물</option>
           <option value="regolith">회색 레골리스 (달 같은)</option>
         </select></div>
-      <div class="field"><label for="water">물의 상태</label>
-        <select id="water">
-          <option value="none">없음</option>
-          <option value="ice">얼음으로만 존재</option>
-          <option value="liquid">액체 바다 / 호수</option>
-          <option value="vapor">수증기로만 존재</option>
-        </select></div>
-      <div class="field"><label for="waterPct">물 피복률 (%)</label><input type="number" id="waterPct" min="0" max="100" step="1" value="70"></div>
+      <div class="field"><label for="liquidPct">액체 물 피복률 (%)</label><input type="number" id="liquidPct" min="0" max="100" step="1" value="70"><small>바다, 호수. 0이면 액체 물 없음</small></div>
+      <div class="field"><label for="icePct">얼음 피복률 (%)</label><input type="number" id="icePct" min="0" max="100" step="1" value="10"><small>빙관, 빙하, 얼음 지각</small></div>
+      <div class="field"><label for="extraLiquid">기타 표면 액체 (선택)</label><input type="text" id="extraLiquid" placeholder="예: 액체 메탄 호수, 용암 바다"></div>
       <div class="field"><label for="geology">지질 활동</label>
         <select id="geology">
           <option value="dead">없음 (지질학적으로 죽음)</option>
@@ -256,9 +258,12 @@ const $=id=>document.getElementById(id);
 
 /* ---------- 데이터 테이블 ---------- */
 const GASES=[
-  ['N2','질소'],['O2','산소'],['CO2','이산화탄소'],['CH4','메탄'],['H2','수소'],
-  ['He','헬륨'],['H2O','수증기'],['SO2','이산화황'],['NH3','암모니아'],['Ar','아르곤']
+  ['N2','질소','nitrogen'],['O2','산소','oxygen'],['CO2','이산화탄소','carbon dioxide'],['CH4','메탄','methane'],['H2','수소','hydrogen'],
+  ['He','헬륨','helium'],['H2O','수증기','water vapor'],['SO2','이산화황','sulfur dioxide'],['NH3','암모니아','ammonia'],['Ar','아르곤','argon'],
+  ['CO','일산화탄소','carbon monoxide'],['O3','오존','ozone'],['Ne','네온','neon'],['H2S','황화수소','hydrogen sulfide'],
+  ['HCN','시안화수소','hydrogen cyanide'],['N2O','아산화질소','nitrous oxide'],['Na','나트륨 증기','sodium vapor'],['SiO','규산염 증기','vaporized rock']
 ];
+const GAS_EN={};GASES.forEach(([k,,en])=>GAS_EN[k]=en);
 const STARS={
   O:{r:10, light:'harsh, intense blue-white light casting hard black shadows', disk:'blazing blue-white', ko:'강렬한 청백색 빛'},
   B:{r:5,  light:'bright blue-white light with sharp shadows', disk:'blue-white', ko:'청백색 빛'},
@@ -296,14 +301,14 @@ const STYLE={
 };
 
 const PRESETS={
-  '지구':{name:'Earth',ptype:'rocky',mass:1,radius:1,temp:15,pressure:1,atm:{N2:78,O2:21,Ar:1},crust:'granite',water:'liquid',waterPct:71,geology:'moderate',clouds:60,life:'civ',star:'G',au:1,rotation:24,moons:1,magnet:'strong',tidal:false,rings:false,style:'photo',tod:'day'},
-  '화성':{name:'Mars',ptype:'desert',mass:0.107,radius:0.532,temp:-63,pressure:0.006,atm:{CO2:95,N2:3,Ar:2},crust:'silicate',water:'ice',waterPct:3,geology:'dead',clouds:5,life:'none',star:'G',au:1.52,rotation:24.6,moons:2,magnet:'none',tidal:false,rings:false,style:'photo',tod:'sunset'},
-  '금성':{name:'Venus',ptype:'rocky',mass:0.815,radius:0.95,temp:464,pressure:92,atm:{CO2:96.5,N2:3.5},crust:'basalt',water:'none',waterPct:0,geology:'active',clouds:100,life:'none',star:'G',au:0.72,rotation:5832,moons:0,magnet:'none',tidal:false,rings:false,style:'concept',tod:'day'},
-  '타이탄형':{name:'Titan-like world',ptype:'ice',mass:0.0225,radius:0.404,temp:-179,pressure:1.45,atm:{N2:95,CH4:5},crust:'ice',water:'ice',waterPct:100,geology:'moderate',clouds:30,life:'none',star:'G',au:9.5,rotation:382,moons:0,magnet:'none',tidal:true,rings:false,style:'concept',tod:'day'},
-  '적색왜성 조석고정':{name:'TRAPPIST-1e',ptype:'rocky',mass:0.69,radius:0.92,temp:5,pressure:1.2,atm:{N2:75,O2:18,CO2:5,H2O:2},crust:'basalt',water:'liquid',waterPct:55,geology:'moderate',clouds:70,life:'plants',star:'M',au:0.029,rotation:146,moons:0,magnet:'weak',tidal:true,rings:false,style:'concept',tod:'sunset'},
-  '뜨거운 목성':{name:'HD 209458 b',ptype:'gas',mass:220,radius:15.5,temp:1100,pressure:1,atm:{H2:85,He:14,H2O:1},crust:'basalt',water:'vapor',waterPct:0,geology:'dead',clouds:90,life:'none',star:'F',au:0.047,rotation:84,moons:0,magnet:'strong',tidal:true,rings:false,style:'nasa',tod:'day'},
-  '용암 슈퍼지구':{name:'55 Cancri e',ptype:'lava',mass:8,radius:1.9,temp:2000,pressure:0.5,atm:{SO2:40,CO2:35,N2:20,H2O:5},crust:'basalt',water:'none',waterPct:0,geology:'active',clouds:20,life:'none',star:'K',au:0.015,rotation:17.7,moons:0,magnet:'weak',tidal:true,rings:false,style:'concept',tod:'day'},
-  '얼음 거성':{name:'Neptune-like',ptype:'icegiant',mass:17,radius:3.9,temp:-200,pressure:1,atm:{H2:80,He:18,CH4:2},crust:'ice',water:'ice',waterPct:0,geology:'dead',clouds:80,life:'none',star:'G',au:30,rotation:16,moons:14,magnet:'strong',tidal:false,rings:true,style:'photo',tod:'day'}
+  '지구':{name:'Earth',ptype:'rocky',mass:1,radius:1,temp:15,pressure:1,atm:{N2:78,O2:21,Ar:1},crust:'granite',liquidPct:71,icePct:10,extraLiquid:'',geology:'moderate',clouds:60,life:'civ',star:'G',au:1,rotation:24,moons:1,magnet:'strong',tidal:false,rings:false,style:'photo',tod:'day'},
+  '화성':{name:'Mars',ptype:'desert',mass:0.107,radius:0.532,temp:-63,pressure:0.006,atm:{CO2:95,N2:3,Ar:2},crust:'silicate',liquidPct:0,icePct:3,extraLiquid:'',geology:'dead',clouds:5,life:'none',star:'G',au:1.52,rotation:24.6,moons:2,magnet:'none',tidal:false,rings:false,style:'photo',tod:'sunset'},
+  '금성':{name:'Venus',ptype:'rocky',mass:0.815,radius:0.95,temp:464,pressure:92,atm:{CO2:96.5,N2:3.5},crust:'basalt',liquidPct:0,icePct:0,extraLiquid:'',geology:'active',clouds:100,life:'none',star:'G',au:0.72,rotation:5832,moons:0,magnet:'none',tidal:false,rings:false,style:'concept',tod:'day'},
+  '타이탄형':{name:'Titan-like world',ptype:'ice',mass:0.0225,radius:0.404,temp:-179,pressure:1.45,atm:{N2:95,CH4:5},crust:'basalt',liquidPct:0,icePct:100,extraLiquid:'dark lakes of liquid methane',geology:'moderate',clouds:30,life:'none',star:'G',au:9.5,rotation:382,moons:0,magnet:'none',tidal:true,rings:false,style:'concept',tod:'day'},
+  '적색왜성 조석고정':{name:'TRAPPIST-1e',ptype:'rocky',mass:0.69,radius:0.92,temp:5,pressure:1.2,atm:{N2:75,O2:18,CO2:5,H2O:2},crust:'basalt',liquidPct:55,icePct:20,extraLiquid:'',geology:'moderate',clouds:70,life:'plants',star:'M',au:0.029,rotation:146,moons:0,magnet:'weak',tidal:true,rings:false,style:'concept',tod:'sunset'},
+  '뜨거운 목성':{name:'HD 209458 b',ptype:'gas',mass:220,radius:15.5,temp:1100,pressure:1,atm:{H2:85,He:14,H2O:1},crust:'basalt',liquidPct:0,icePct:0,extraLiquid:'',geology:'dead',clouds:90,life:'none',star:'F',au:0.047,rotation:84,moons:0,magnet:'strong',tidal:true,rings:false,style:'nasa',tod:'day'},
+  '용암 슈퍼지구':{name:'55 Cancri e',ptype:'lava',mass:8,radius:1.9,temp:2000,pressure:0.5,atm:{SO2:40,CO2:35,N2:20,H2O:5},crust:'basalt',liquidPct:0,icePct:0,extraLiquid:'glowing seas of molten rock',geology:'active',clouds:20,life:'none',star:'K',au:0.015,rotation:17.7,moons:0,magnet:'weak',tidal:true,rings:false,style:'concept',tod:'day'},
+  '얼음 거성':{name:'Neptune-like',ptype:'icegiant',mass:17,radius:3.9,temp:-200,pressure:1,atm:{H2:80,He:18,CH4:2},crust:'basalt',liquidPct:0,icePct:0,extraLiquid:'',geology:'dead',clouds:80,life:'none',star:'G',au:30,rotation:16,moons:14,magnet:'strong',tidal:false,rings:true,style:'photo',tod:'day'}
 };
 
 /* ---------- 폼 구성 ---------- */
@@ -313,6 +318,22 @@ GASES.forEach(([k,ko])=>{
   d.innerHTML=`<label for="g_${k}">${k} <small>${ko}</small></label><input type="number" id="g_${k}" min="0" max="100" step="0.1" value="0">`;
   atmBox.appendChild(d);
 });
+const gasCustomBox=$('atmCustom');let gasSeq=0;
+function addGasRow(name,pct){
+  const id='gc'+(++gasSeq);
+  const row=document.createElement('div');row.className='gasrow';
+  row.innerHTML=`<input type="text" id="${id}_n" placeholder="성분 이름 (예: 염소, chlorine)" aria-label="성분 이름"><input type="number" id="${id}_p" min="0" max="100" step="0.1" placeholder="%" aria-label="비율 %"><button type="button" aria-label="성분 삭제">삭제</button>`;
+  row.querySelector('input[type=text]').value=name||'';row.querySelector('input[type=number]').value=pct||'';
+  row.querySelector('button').addEventListener('click',()=>{row.remove();render();});
+  gasCustomBox.appendChild(row);
+  return row;
+}
+$('addGas').addEventListener('click',()=>{addGasRow('','').querySelector('input').focus();});
+function readCustomGases(){
+  const out={};
+  gasCustomBox.querySelectorAll('.gasrow').forEach(r=>{const n=r.querySelector('input[type=text]').value.trim();const p=parseFloat(r.querySelector('input[type=number]').value)||0;if(n)out[n]=(out[n]||0)+p;});
+  return out;
+}
 const presetBox=$('presets');
 Object.keys(PRESETS).forEach(n=>{
   const b=document.createElement('button');b.type='button';b.textContent=n;
@@ -321,7 +342,7 @@ Object.keys(PRESETS).forEach(n=>{
 });
 
 /* 직접 입력 가능한 드롭다운 */
-const CUSTOM={ptype:'예: 탄소 행성, 떠돌이 행성',crust:'예: 유리질 흑요석 평원',water:'예: 액체 메탄 호수',geology:'예: 얼음 화산 활동',
+const CUSTOM={ptype:'예: 탄소 행성, 떠돌이 행성',crust:'예: 유리질 흑요석 평원',geology:'예: 얼음 화산 활동',
   life:'예: 거대한 결정 생물',star:'예: 중성자별, 적색 거성',style:'예: 픽셀 아트, 일본 애니메이션 배경',tod:'예: 두 번째 태양이 뜨는 새벽'};
 const isC=k=>$(k).value==='__custom';
 Object.keys(CUSTOM).forEach(k=>{
@@ -333,18 +354,21 @@ Object.keys(CUSTOM).forEach(k=>{
 const cv=k=>$(k+'_custom').value.trim()||'(직접 입력 내용 없음)';
 
 function applyPreset(p){
-  ['name','ptype','mass','radius','temp','pressure','crust','water','waterPct','geology','clouds','life','star','au','rotation','moons','magnet','style','tod'].forEach(k=>{$(k).value=p[k];});
+  ['name','ptype','mass','radius','temp','pressure','crust','liquidPct','icePct','extraLiquid','geology','clouds','life','star','au','rotation','moons','magnet','style','tod'].forEach(k=>{$(k).value=p[k]==null?'':p[k];});
+  if(p.crust==='ice'){$('crust').value='basalt';}
   Object.keys(CUSTOM).forEach(k=>{const inp=$(k+'_custom');inp.value=p[k+'Custom']||'';inp.hidden=!isC(k);});
   $('tidal').checked=!!p.tidal;$('rings').checked=!!p.rings;
   GASES.forEach(([k])=>{$('g_'+k).value=p.atm[k]||0;});
+  gasCustomBox.innerHTML='';Object.keys(p.atm).forEach(k=>{if(!GAS_EN[k]&&p.atm[k]>0)addGasRow(k,p.atm[k]);});
 }
 function readForm(){
   const v={};
-  ['name','ptype','crust','water','geology','life','star','magnet','style','tod'].forEach(k=>v[k]=$(k).value);
-  ['mass','radius','temp','pressure','waterPct','clouds','au','rotation','moons'].forEach(k=>v[k]=parseFloat($(k).value)||0);
+  ['name','ptype','crust','extraLiquid','geology','life','star','magnet','style','tod'].forEach(k=>v[k]=$(k).value.trim());
+  ['mass','radius','temp','pressure','liquidPct','icePct','clouds','au','rotation','moons'].forEach(k=>v[k]=parseFloat($(k).value)||0);
   Object.keys(CUSTOM).forEach(k=>{v[k+'Custom']=$(k+'_custom').value.trim();});
   v.tidal=$('tidal').checked;v.rings=$('rings').checked;
   v.atm={};GASES.forEach(([k])=>{v.atm[k]=parseFloat($('g_'+k).value)||0;});
+  Object.assign(v.atm,readCustomGases());
   return v;
 }
 
@@ -365,6 +389,8 @@ function derive(v){
   d.atm=norm;
   d.sorted=Object.entries(norm).filter(([,p])=>p>0).sort((a,b)=>b[1]-a[1]);
   d.dominant=d.sorted.length?d.sorted[0][0]:null;
+  d.customDominant=d.dominant&&!GAS_EN[d.dominant];
+  d.atmLine=d.sorted.length?d.sorted.slice(0,4).map(([k,p],i)=>(i===0?'mostly ':p<3?'traces of ':'')+(GAS_EN[k]||k)).join(', '):null;
   d.gasWorld=v.ptype==='gas'||v.ptype==='icegiant'||(isC('ptype')&&/가스|거성|gas|giant|jovian/i.test(v.ptypeCustom));
   d.vacuum=v.pressure<0.01;
   // 액체 물 가능 범위 (단순화: 끓는점은 압력에 따라 상승)
@@ -376,7 +402,7 @@ function derive(v){
   if(v.temp>-20&&v.temp<60)hab++;
   if(v.pressure>0.3&&v.pressure<10)hab++;
   if(norm.O2>5)hab++;
-  if(v.water==='liquid')hab++;
+  if(v.liquidPct>0)hab++;
   if(!d.gasWorld)hab++;
   if(norm.CO2<20&&norm.SO2<5&&norm.NH3<5)hab++;
   if(v.magnet!=='none')hab++;
@@ -394,7 +420,10 @@ function skyDesc(v,d){
   const st=starD(v);const a=d.atm;
   if(d.gasWorld)return{en:`no solid ground: the viewpoint floats among towering cloud decks, bands of ${v.ptype==='icegiant'?'deep blue and teal methane clouds':'cream, tan and rust-colored ammonia clouds'} stretching to a hazy horizon, lightning flickering deep in the cloud canyons below`,ko:'지면 없음, 거대한 구름층 사이의 시점'};
   if(d.vacuum)return{en:'an airless pitch-black sky with stars visible even in full daylight, no atmospheric haze, razor-sharp shadows',ko:'대기 없는 칠흑 하늘, 낮에도 별이 보임'};
-  if(a.SO2>10)return{en:'a sickly yellow-brown sulfurous sky, thick acid haze, diffuse glow with no visible sun disk',ko:'누런 황 안개 하늘'};
+  if(d.customDominant)return{en:`a strange sky colored by an atmosphere of ${d.dominant}, diffuse alien light`,ko:`${d.dominant} 대기의 낯선 하늘`};
+  if(a.SiO>5||a.Na>5)return{en:'a glowing, hazy sky of vaporized rock and sodium, dull orange-yellow glare, heat shimmer everywhere',ko:'증발한 암석의 노란 아지랑이 하늘'};
+  if(a.SO2>10||a.H2S>5)return{en:'a sickly yellow-brown sulfurous sky, thick acid haze, diffuse glow with no visible sun disk',ko:'누런 황 안개 하늘'};
+  if(a.HCN>2)return{en:'a brownish-orange organic haze sky, dim and smoggy',ko:'갈색 유기물 안개 하늘'};
   if(a.CO2>60&&v.pressure>5)return{en:'a crushing, opaque yellow-orange sky, light diffused through dense clouds so no star disk is visible, dim amber twilight at noon',ko:'짙은 황적색 하늘, 정오에도 어둑한 호박빛'};
   if(a.CO2>60)return{en:'a pale butterscotch sky fading to pink near the horizon, fine dust suspended in thin air',ko:'옅은 황갈색 하늘, 지평선 근처 분홍빛'};
   if(a.CH4>2&&a.N2>50)return{en:'a thick orange photochemical smog sky, soft diffuse light, no sharp shadows',ko:'주황색 탄화수소 안개 하늘'};
@@ -421,7 +450,7 @@ function starInSky(v,d){
 }
 function terrainDesc(v,d){
   const c=crustD(v);const t=v.temp;
-  const parts=[c.en];
+  const parts=v.icePct>90?[]:[c.en];
   if(t>1200)parts.push('vast seas of glowing molten rock, rivers of lava, surface rock softened and glowing dull red');
   else if(t>600)parts.push('scorched ground with glowing orange cracks, no liquid anywhere, heat shimmer');
   else if(t>150)parts.push('baked, bone-dry rock, no ice and no liquid');
@@ -429,16 +458,23 @@ function terrainDesc(v,d){
   else if(t<-40)parts.push('permafrost, wind-carved ice, frost coating every surface');
   // 물
   if(!d.gasWorld){
-    if(v.water==='liquid'&&v.waterPct>0){
-      const w=v.waterPct;
+    if(v.liquidPct>0){
+      const w=v.liquidPct;
       if(w>85)parts.push('a world-spanning ocean with only scattered islands breaking the surface');
       else if(w>40)parts.push(`a wide ${d.liquidOk?'':'improbable '}sea on the horizon, waves rolling onto the shore`);
-      else parts.push('a shallow lake or inland sea in the middle distance');
+      else if(w>5)parts.push('a shallow lake or inland sea in the middle distance');
+      else parts.push('a small pool of liquid water among the rocks');
       if(t<0)parts.push('(the water is somehow liquid despite the cold)');
-    }else if(v.water==='ice'&&v.waterPct>0){
-      parts.push(v.waterPct>60?'glaciers and ice sheets covering most of the land':'ice caps and frozen lakes');
-    }else if(v.water==='vapor'){parts.push('wisps of steam venting from the ground');}
-    else if(isC('water')){parts.push(cv('water'));}
+    }
+    if(v.icePct>0){
+      const i=v.icePct;
+      if(i>90)parts.push('the entire landscape is a cracked water-ice crust, pale blue-white with pressure ridges');
+      else if(i>60)parts.push('glaciers and ice sheets covering most of the land');
+      else if(i>20)parts.push('large ice fields and frozen lakes');
+      else parts.push('patches of ice and frost in the shadows');
+    }
+    if(d.atm.H2O>20&&v.liquidPct===0)parts.push('wisps of steam venting from the ground');
+    if(v.extraLiquid)parts.push(v.extraLiquid);
   }
   // 중력
   if(d.g<0.4)parts.push('low gravity: tall, spindly rock pillars and towering cliffs that could not stand on Earth');
@@ -481,11 +517,11 @@ function globeColor(v,d){
   if(v.temp>1200)parts.push('a black globe veined with glowing orange-red lava cracks and bright magma seas');
   else{
     const crustCol={basalt:'dark charcoal-grey',granite:'grey and tan',silicate:'rust-red and ochre',iron:'dull metallic grey-brown',carbon:'jet black with glittering specks',ice:'pale blue-white',salt:'blinding white',sulfur:'yellow and orange mottled',regolith:'grey, crater-pocked'}[v.crust];
-    parts.push((crustCol||cv('crust'))+' land');
+    if(v.icePct<=90)parts.push((crustCol||cv('crust'))+' land');
   }
-  if(v.water==='liquid'&&v.waterPct>0)parts.push(v.waterPct>85?'almost entirely covered by a deep blue ocean':`deep blue oceans covering about ${v.waterPct}% of the surface`);
-  if(v.water==='ice'&&v.waterPct>0)parts.push(v.waterPct>60?'wrapped in white ice sheets':'white polar ice caps');
-  if(isC('water'))parts.push(cv('water'));
+  if(v.liquidPct>0)parts.push(v.liquidPct>85?'almost entirely covered by a deep blue ocean':v.liquidPct>5?`deep blue oceans covering about ${v.liquidPct}% of the surface`:'a few small dark lakes');
+  if(v.icePct>0)parts.push(v.icePct>90?'entirely encased in bright white ice':v.icePct>60?'wrapped in white ice sheets':v.icePct>20?'broad white ice caps and frozen regions':'small white polar ice caps');
+  if(v.extraLiquid)parts.push(v.extraLiquid);
   if(v.life==='plants')parts.push('continents tinted by alien vegetation');
   if(d.atm.CO2>60&&v.pressure>5)parts.push('completely hidden under a featureless pale-yellow cloud blanket');
   else if(d.atm.CH4>2&&d.atm.N2>50)parts.push('wrapped in an opaque orange haze');
@@ -511,6 +547,7 @@ function build(v,d){
     (d.gasWorld?sky.en+'.':`Foreground: ${terrain.join('; ')}.`),
     (d.gasWorld?'':`Sky: ${sky.en}.`),
     `Light: ${starInSky(v,d)}.`,
+    d.atmLine&&!d.vacuum?`Atmosphere: ${d.atmLine}.`:'',
     weather?`Weather: ${weather}.`:'',
     `${lifeDesc(v)}.`,
     `${todDesc(v,d)}.`,
@@ -522,6 +559,7 @@ function build(v,d){
   const orbitParts=[
     `${st.en} of ${name}, ${ptypeEn(v)}, seen from space.`,
     `The globe is ${globeColor(v,d)}, with ${limbDesc(v,d)}.`,
+    d.atmLine&&!d.vacuum?`Its atmosphere is ${d.atmLine}.`:'',
     v.tidal?'One hemisphere is permanently lit, the terminator line dividing a sunlit day side from a dark frozen night side.':'A sharp terminator divides the day and night sides.',
     v.life==='civ'?'The night side glitters with the lights of cities.':'',
     v.magnet==='strong'&&!d.vacuum?'Faint auroral rings glow over the poles.':'',
@@ -533,11 +571,11 @@ function build(v,d){
   ].filter(Boolean);
 
   const neg=['text','watermark','logo','people','astronaut','spaceship','cartoon','low quality','blurry','Earth continents','recognizable Earth map',
-    d.vacuum?'clouds, blue sky':'', v.water!=='liquid'?'liquid water, ocean':'', v.life==='none'?'plants, trees, animals, buildings':'',
+    d.vacuum?'clouds, blue sky':'', v.liquidPct===0?'liquid water, ocean':'', v.icePct===0&&v.temp>0?'ice, snow':'', v.life==='none'?'plants, trees, animals, buildings':'',
     d.gasWorld?'solid ground, rocks, mountains':''].filter(Boolean).join(', ');
 
   const surfaceKo=`${ptypeKo(v)} 지표면. ${d.gasWorld?'지면 없이 구름층 사이 시점':crustD(v).ko}. 하늘: ${sky.ko}. 빛: ${starD(v).ko}. ${lifeKo(v)}.`;
-  const orbitKo=`우주에서 본 ${ptypeKo(v)}. ${v.water==='liquid'?'푸른 바다':v.water==='ice'?'얼음':isC('water')?cv('water'):'물 없음'}, 구름 ${v.clouds}%${v.rings?', 고리':''}${v.moons?', 위성 '+v.moons+'개':''}${v.tidal?', 조석 고정':''}.`;
+  const orbitKo=`우주에서 본 ${ptypeKo(v)}. ${v.liquidPct>0?'액체 물 '+v.liquidPct+'%':'액체 물 없음'}${v.icePct>0?', 얼음 '+v.icePct+'%':''}${v.extraLiquid?', '+v.extraLiquid:''}, 구름 ${v.clouds}%${v.rings?', 고리':''}${v.moons?', 위성 '+v.moons+'개':''}${v.tidal?', 조석 고정':''}.`;
   const cap=p=>p.map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(' ');
   return{surface:cap(surfaceParts),orbit:cap(orbitParts),negative:neg,surfaceKo,orbitKo};
 }
@@ -562,12 +600,14 @@ function render(){
   $('verdict').textContent=`거주 가능성 점수 ${d.hab}/7. ${habTxt}`;
 
   const notes=[];
-  if(v.water==='liquid'&&!d.liquidOk&&!d.gasWorld)notes.push(`이 온도와 기압에서는 액체 물이 안정적으로 존재하기 어렵습니다 (끓는점 약 ${fmt(d.boil,0)}°C). 프롬프트에는 그대로 반영했습니다.`);
+  if(v.liquidPct>0&&!d.liquidOk&&!d.gasWorld)notes.push(`이 온도와 기압에서는 액체 물이 안정적으로 존재하기 어렵습니다 (끓는점 약 ${fmt(d.boil,0)}°C). 프롬프트에는 그대로 반영했습니다.`);
   if(d.atm.O2>15&&v.life==='none')notes.push('산소가 많은데 생명이 없는 설정입니다. 실제로는 산소가 암석과 반응해 사라지므로 비현실적일 수 있습니다.');
   if((d.atm.H2+d.atm.He)>30&&!d.gasWorld&&d.vesc<15)notes.push('질량이 작은 행성은 수소·헬륨을 붙잡아 두지 못합니다 (탈출 속도가 낮음).');
   if(d.gasWorld&&d.density>3)notes.push('가스 행성치고 밀도가 너무 높습니다. 반지름을 키우거나 질량을 줄여 보세요.');
   if(!d.gasWorld&&d.density<2)notes.push('암석 행성치고 밀도가 너무 낮습니다. 얼음이나 두꺼운 대기가 대부분인 세계일 수 있습니다.');
-  if(v.temp>1000&&v.water!=='none'&&v.water!=='vapor')notes.push('이 온도에서 물은 수증기 상태만 가능합니다.');
+  if(v.temp>1000&&(v.liquidPct>0||v.icePct>0))notes.push('이 온도에서 물은 수증기 상태만 가능합니다.');
+  if(v.temp>30&&v.icePct>50)notes.push('이 온도에서 얼음이 지표 절반 이상을 덮기는 어렵습니다.');
+  if(v.liquidPct+v.icePct>100)notes.push('액체 물과 얼음 피복률 합이 100%를 넘습니다.');
   if(v.star==='M'&&v.au>0.3)notes.push('적색 왜성은 어두워서 이 거리면 매우 추운 행성이 됩니다.');
   if(d.vacuum&&v.clouds>0)notes.push('대기가 거의 없으면 구름이 생기지 않아 프롬프트에서 구름을 뺐습니다.');
   $('notes').innerHTML=notes.map(n=>`<li>${n}</li>`).join('');
