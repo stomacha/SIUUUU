@@ -54,6 +54,7 @@ fieldset>.row,fieldset>.atm{clear:both}
 .field small{color:var(--muted);font-size:11px}
 input[type=number],input[type=text],select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:100%;min-width:0}
 input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums}
+input.custom{margin-top:4px;border-color:var(--accent)}
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .atm{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
 .atm .field label{font-family:var(--mono);font-weight:500;font-size:12px}
@@ -319,8 +320,21 @@ Object.keys(PRESETS).forEach(n=>{
   presetBox.appendChild(b);
 });
 
+/* 직접 입력 가능한 드롭다운 */
+const CUSTOM={ptype:'예: 탄소 행성, 떠돌이 행성',crust:'예: 유리질 흑요석 평원',water:'예: 액체 메탄 호수',geology:'예: 얼음 화산 활동',
+  life:'예: 거대한 결정 생물',star:'예: 중성자별, 적색 거성',style:'예: 픽셀 아트, 일본 애니메이션 배경',tod:'예: 두 번째 태양이 뜨는 새벽'};
+const isC=k=>$(k).value==='__custom';
+Object.keys(CUSTOM).forEach(k=>{
+  const sel=$(k);const o=document.createElement('option');o.value='__custom';o.textContent='직접 입력…';sel.appendChild(o);
+  const inp=document.createElement('input');inp.type='text';inp.id=k+'_custom';inp.className='custom';inp.placeholder=CUSTOM[k];inp.hidden=true;inp.setAttribute('aria-label','직접 입력');
+  sel.insertAdjacentElement('afterend',inp);
+  sel.addEventListener('change',()=>{inp.hidden=!isC(k);if(!inp.hidden)inp.focus();});
+});
+const cv=k=>$(k+'_custom').value.trim()||'(직접 입력 내용 없음)';
+
 function applyPreset(p){
   ['name','ptype','mass','radius','temp','pressure','crust','water','waterPct','geology','clouds','life','star','au','rotation','moons','magnet','style','tod'].forEach(k=>{$(k).value=p[k];});
+  Object.keys(CUSTOM).forEach(k=>{const inp=$(k+'_custom');inp.value=p[k+'Custom']||'';inp.hidden=!isC(k);});
   $('tidal').checked=!!p.tidal;$('rings').checked=!!p.rings;
   GASES.forEach(([k])=>{$('g_'+k).value=p.atm[k]||0;});
 }
@@ -328,6 +342,7 @@ function readForm(){
   const v={};
   ['name','ptype','crust','water','geology','life','star','magnet','style','tod'].forEach(k=>v[k]=$(k).value);
   ['mass','radius','temp','pressure','waterPct','clouds','au','rotation','moons'].forEach(k=>v[k]=parseFloat($(k).value)||0);
+  Object.keys(CUSTOM).forEach(k=>{v[k+'Custom']=$(k+'_custom').value.trim();});
   v.tidal=$('tidal').checked;v.rings=$('rings').checked;
   v.atm={};GASES.forEach(([k])=>{v.atm[k]=parseFloat($('g_'+k).value)||0;});
   return v;
@@ -342,7 +357,7 @@ function derive(v){
   d.density=M/(R*R*R)*5.51;                 // g/cm³
   d.vesc=11.19*Math.sqrt(M/R);              // km/s
   d.tempK=v.temp+273.15;
-  const st=STARS[v.star];
+  const st=starD(v);
   d.starSize=st.r/Math.max(v.au,0.001);     // 지구에서 본 태양 대비 겉보기 지름
   const total=Object.values(v.atm).reduce((a,b)=>a+b,0);
   d.atmTotal=total;
@@ -350,7 +365,7 @@ function derive(v){
   d.atm=norm;
   d.sorted=Object.entries(norm).filter(([,p])=>p>0).sort((a,b)=>b[1]-a[1]);
   d.dominant=d.sorted.length?d.sorted[0][0]:null;
-  d.gasWorld=v.ptype==='gas'||v.ptype==='icegiant';
+  d.gasWorld=v.ptype==='gas'||v.ptype==='icegiant'||(isC('ptype')&&/가스|거성|gas|giant|jovian/i.test(v.ptypeCustom));
   d.vacuum=v.pressure<0.01;
   // 액체 물 가능 범위 (단순화: 끓는점은 압력에 따라 상승)
   const boil=v.pressure<=0?0:100+28*Math.log(Math.max(v.pressure,0.01));
@@ -370,8 +385,13 @@ function derive(v){
 }
 
 /* ---------- 묘사 선택 ---------- */
+function starD(v){return isC('star')?{r:1,light:'the light of '+cv('star'),disk:cv('star'),ko:cv('star')}:STARS[v.star];}
+function crustD(v){return isC('crust')?{en:cv('crust'),ko:cv('crust')}:CRUST[v.crust];}
+function ptypeEn(v){return isC('ptype')?cv('ptype'):PTYPE[v.ptype];}
+function ptypeKo(v){return isC('ptype')?cv('ptype'):PTYPE_KO[v.ptype];}
+function styleD(v){return isC('style')?{en:cv('style'),tail:'highly detailed'}:STYLE[v.style];}
 function skyDesc(v,d){
-  const st=STARS[v.star];const a=d.atm;
+  const st=starD(v);const a=d.atm;
   if(d.gasWorld)return{en:`no solid ground: the viewpoint floats among towering cloud decks, bands of ${v.ptype==='icegiant'?'deep blue and teal methane clouds':'cream, tan and rust-colored ammonia clouds'} stretching to a hazy horizon, lightning flickering deep in the cloud canyons below`,ko:'지면 없음, 거대한 구름층 사이의 시점'};
   if(d.vacuum)return{en:'an airless pitch-black sky with stars visible even in full daylight, no atmospheric haze, razor-sharp shadows',ko:'대기 없는 칠흑 하늘, 낮에도 별이 보임'};
   if(a.SO2>10)return{en:'a sickly yellow-brown sulfurous sky, thick acid haze, diffuse glow with no visible sun disk',ko:'누런 황 안개 하늘'};
@@ -386,11 +406,11 @@ function skyDesc(v,d){
   if(v.pressure<0.3)base='a thin, dark navy-blue sky deepening to black overhead, stars faintly visible by day';
   else if(v.pressure>4)base='a pale, milky whitish-blue sky from the thick air, distant hills fading quickly into haze';
   else base='a clear blue sky';
-  const tint={O:' with a violet cast',B:' with a violet cast',A:'',F:'',G:'',K:' tinged warm orange toward the horizon',M:', dim and salmon-tinted, like perpetual late afternoon',WD:', dark with a single blinding point of light',BIN:' lit by two suns'}[v.star];
+  const tint={O:' with a violet cast',B:' with a violet cast',A:'',F:'',G:'',K:' tinged warm orange toward the horizon',M:', dim and salmon-tinted, like perpetual late afternoon',WD:', dark with a single blinding point of light',BIN:' lit by two suns'}[v.star]||(isC('star')?', lit by '+cv('star'):'');
   return{en:base+tint,ko:v.pressure<0.3?'얇고 어두운 남색 하늘':v.pressure>4?'뿌연 희푸른 하늘':'푸른 하늘'+(st.ko?' ('+st.ko+')':'')};
 }
 function starInSky(v,d){
-  const s=d.starSize;const st=STARS[v.star];
+  const s=d.starSize;const st=starD(v);
   let size;
   if(s<0.3)size='the host star is only a small brilliant point';
   else if(s<0.8)size='the host star appears smaller than our Sun';
@@ -400,7 +420,7 @@ function starInSky(v,d){
   return size+', '+st.light;
 }
 function terrainDesc(v,d){
-  const c=CRUST[v.crust];const t=v.temp;
+  const c=crustD(v);const t=v.temp;
   const parts=[c.en];
   if(t>1200)parts.push('vast seas of glowing molten rock, rivers of lava, surface rock softened and glowing dull red');
   else if(t>600)parts.push('scorched ground with glowing orange cracks, no liquid anywhere, heat shimmer');
@@ -418,6 +438,7 @@ function terrainDesc(v,d){
     }else if(v.water==='ice'&&v.waterPct>0){
       parts.push(v.waterPct>60?'glaciers and ice sheets covering most of the land':'ice caps and frozen lakes');
     }else if(v.water==='vapor'){parts.push('wisps of steam venting from the ground');}
+    else if(isC('water')){parts.push(cv('water'));}
   }
   // 중력
   if(d.g<0.4)parts.push('low gravity: tall, spindly rock pillars and towering cliffs that could not stand on Earth');
@@ -425,6 +446,7 @@ function terrainDesc(v,d){
   // 지질
   if(v.geology==='active')parts.push('erupting volcanoes on the horizon, ash plumes, fresh lava flows');
   else if(v.geology==='moderate')parts.push('a distant mountain range and old volcanic cones');
+  else if(isC('geology'))parts.push(cv('geology'));
   else parts.push('ancient, heavily cratered, geologically dead terrain');
   return parts;
 }
@@ -442,10 +464,12 @@ function weatherDesc(v,d){
   return parts.join(', ');
 }
 function lifeDesc(v){
+  if(isC('life'))return cv('life');
   return{none:'no life, no vegetation, no structures',microbial:'colorful microbial mats and slime staining the rocks in orange and green',plants:'alien vegetation adapted to the local light, strange leaf colors, no Earth plants',civ:'an alien city of unfamiliar architecture in the distance, lights, structures following the terrain'}[v.life];
 }
-function lifeKo(v){return{none:'생명 없음',microbial:'미생물 매트',plants:'외계 식생',civ:'문명 도시'}[v.life];}
+function lifeKo(v){if(isC('life'))return cv('life');return{none:'생명 없음',microbial:'미생물 매트',plants:'외계 식생',civ:'문명 도시'}[v.life];}
 function todDesc(v,d){
+  if(isC('tod'))return cv('tod');
   if(v.tidal&&v.tod!=='night')return v.tod==='sunset'?'viewed from the terminator zone, the star sitting forever on the horizon in an endless sunset':'the star hangs motionless at the same spot in the sky, never setting';
   return{day:'midday light',sunset:'the star low on the horizon, long shadows, sky gradient',night:'night, the surface lit only by '+(v.moons>0?(v.moons===1?'a single moon':v.moons+' moons')+' and starlight':'starlight')}[v.tod];
 }
@@ -457,10 +481,11 @@ function globeColor(v,d){
   if(v.temp>1200)parts.push('a black globe veined with glowing orange-red lava cracks and bright magma seas');
   else{
     const crustCol={basalt:'dark charcoal-grey',granite:'grey and tan',silicate:'rust-red and ochre',iron:'dull metallic grey-brown',carbon:'jet black with glittering specks',ice:'pale blue-white',salt:'blinding white',sulfur:'yellow and orange mottled',regolith:'grey, crater-pocked'}[v.crust];
-    parts.push(crustCol+' land');
+    parts.push((crustCol||cv('crust'))+' land');
   }
   if(v.water==='liquid'&&v.waterPct>0)parts.push(v.waterPct>85?'almost entirely covered by a deep blue ocean':`deep blue oceans covering about ${v.waterPct}% of the surface`);
   if(v.water==='ice'&&v.waterPct>0)parts.push(v.waterPct>60?'wrapped in white ice sheets':'white polar ice caps');
+  if(isC('water'))parts.push(cv('water'));
   if(v.life==='plants')parts.push('continents tinted by alien vegetation');
   if(d.atm.CO2>60&&v.pressure>5)parts.push('completely hidden under a featureless pale-yellow cloud blanket');
   else if(d.atm.CH4>2&&d.atm.N2>50)parts.push('wrapped in an opaque orange haze');
@@ -476,13 +501,13 @@ function limbDesc(v,d){
 
 /* ---------- 프롬프트 조립 ---------- */
 function build(v,d){
-  const st=STYLE[v.style];
+  const st=styleD(v);
   const name=v.name.trim()||'an unnamed exoplanet';
   const sky=skyDesc(v,d);
   const terrain=terrainDesc(v,d);
   const weather=weatherDesc(v,d);
   const surfaceParts=[
-    `${st.en} of the surface of ${name}, ${PTYPE[v.ptype]}.`,
+    `${st.en} of the surface of ${name}, ${ptypeEn(v)}.`,
     (d.gasWorld?sky.en+'.':`Foreground: ${terrain.join('; ')}.`),
     (d.gasWorld?'':`Sky: ${sky.en}.`),
     `Light: ${starInSky(v,d)}.`,
@@ -495,14 +520,14 @@ function build(v,d){
   ].filter(Boolean);
 
   const orbitParts=[
-    `${st.en} of ${name}, ${PTYPE[v.ptype]}, seen from space.`,
+    `${st.en} of ${name}, ${ptypeEn(v)}, seen from space.`,
     `The globe is ${globeColor(v,d)}, with ${limbDesc(v,d)}.`,
     v.tidal?'One hemisphere is permanently lit, the terminator line dividing a sunlit day side from a dark frozen night side.':'A sharp terminator divides the day and night sides.',
     v.life==='civ'?'The night side glitters with the lights of cities.':'',
     v.magnet==='strong'&&!d.vacuum?'Faint auroral rings glow over the poles.':'',
     v.rings?'A broad, bright ring system encircles the planet, casting a thin shadow on the globe.':'',
-    v.moons>0?`${v.moons===1?'A single moon':v.moons>5?'Several moons':v.moons+' moons'} orbit nearby.`:'',
-    `The host star, ${STARS[v.star].disk}, ${d.starSize>2?'enormous and close, lighting the planet with '+STARS[v.star].light:'off-frame, lighting the planet with '+STARS[v.star].light}.`,
+    v.moons>0?`${v.moons===1?'A single moon orbits':v.moons>5?'Several moons orbit':v.moons+' moons orbit'} nearby.`:'',
+    `The host star, ${starD(v).disk}, ${d.starSize>2?'enormous and close, lighting the planet with '+starD(v).light:'off-frame, lighting the planet with '+starD(v).light}.`,
     d.g>2?'The planet looks noticeably large and massive.':'',
     `Black space with faint stars in the background, ${st.tail}, no text. --ar 16:9`
   ].filter(Boolean);
@@ -511,8 +536,8 @@ function build(v,d){
     d.vacuum?'clouds, blue sky':'', v.water!=='liquid'?'liquid water, ocean':'', v.life==='none'?'plants, trees, animals, buildings':'',
     d.gasWorld?'solid ground, rocks, mountains':''].filter(Boolean).join(', ');
 
-  const surfaceKo=`${PTYPE_KO[v.ptype]} 지표면. ${d.gasWorld?'지면 없이 구름층 사이 시점':CRUST[v.crust].ko}. 하늘: ${sky.ko}. 빛: ${STARS[v.star].ko}. ${lifeKo(v)}.`;
-  const orbitKo=`우주에서 본 ${PTYPE_KO[v.ptype]}. ${v.water==='liquid'?'푸른 바다':v.water==='ice'?'얼음':'물 없음'}, 구름 ${v.clouds}%${v.rings?', 고리':''}${v.moons?', 위성 '+v.moons+'개':''}${v.tidal?', 조석 고정':''}.`;
+  const surfaceKo=`${ptypeKo(v)} 지표면. ${d.gasWorld?'지면 없이 구름층 사이 시점':crustD(v).ko}. 하늘: ${sky.ko}. 빛: ${starD(v).ko}. ${lifeKo(v)}.`;
+  const orbitKo=`우주에서 본 ${ptypeKo(v)}. ${v.water==='liquid'?'푸른 바다':v.water==='ice'?'얼음':isC('water')?cv('water'):'물 없음'}, 구름 ${v.clouds}%${v.rings?', 고리':''}${v.moons?', 위성 '+v.moons+'개':''}${v.tidal?', 조석 고정':''}.`;
   const cap=p=>p.map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(' ');
   return{surface:cap(surfaceParts),orbit:cap(orbitParts),negative:neg,surfaceKo,orbitKo};
 }
