@@ -1,0 +1,578 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>행성 상상도 프롬프트</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 관측 기록지 느낌. 왼쪽은 입력 폼(측정값), 오른쪽은 고정된 출력 패널(해석 + 프롬프트). 폰에서는 한 열로 쌓임. */
+:root{
+  --bg:#eef0f4; --panel:#ffffff; --fg:#17202e; --muted:#5b6678; --line:#d3d8e1;
+  --accent:#b4581c; --accent-soft:#f7e7d9; --accent-fg:#ffffff;
+  --out-bg:#111723; --out-fg:#e3e9f3; --out-muted:#8e9ab0; --out-line:#273043;
+  --ok:#2f7d4f; --warn:#a4620e; --warn-soft:#fbf0dc;
+  --sans:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0e1118; --panel:#161b26; --fg:#e6e9ef; --muted:#8f9ab0; --line:#2a3242;
+    --accent:#e8964a; --accent-soft:#3a2a1a; --accent-fg:#160c03;
+    --out-bg:#0a0d13; --out-fg:#dfe6f2; --out-muted:#7f8ba2; --out-line:#222a3a;
+    --ok:#6fcf97; --warn:#e8b45a; --warn-soft:#2b2214;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0e1118; --panel:#161b26; --fg:#e6e9ef; --muted:#8f9ab0; --line:#2a3242;
+  --accent:#e8964a; --accent-soft:#3a2a1a; --accent-fg:#160c03;
+  --out-bg:#0a0d13; --out-fg:#dfe6f2; --out-muted:#7f8ba2; --out-line:#222a3a;
+  --ok:#6fcf97; --warn:#e8b45a; --warn-soft:#2b2214;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:14px;line-height:1.55;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:28px 48px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:22px}
+h1{font-size:26px;font-weight:700;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+header p{margin:6px 0 0;color:var(--muted);max-width:60ch}
+.presets{display:flex;flex-wrap:wrap;gap:6px}
+.presets button{font:inherit;font-size:12px;padding:5px 10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:999px;cursor:pointer}
+.presets button:hover{border-color:var(--accent);color:var(--accent)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:0}
+fieldset{border:0;margin:0;padding:16px 18px;border-bottom:1px solid var(--line);min-width:0}
+fieldset:last-child{border-bottom:0}
+legend{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:0;margin-bottom:10px;display:block;width:100%}
+fieldset>.row,fieldset>.atm{clear:both}
+.row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 14px}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:12px;font-weight:600;color:var(--fg)}
+.field small{color:var(--muted);font-size:11px}
+input[type=number],input[type=text],select{font:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:100%;min-width:0}
+input[type=number]{font-family:var(--mono);font-variant-numeric:tabular-nums}
+input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.atm{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.atm .field label{font-family:var(--mono);font-weight:500;font-size:12px}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;margin-top:4px}
+.chk input{accent-color:var(--accent)}
+.atm-total{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:8px}
+.atm-total.bad{color:var(--warn)}
+
+.out{position:sticky;top:env(safe-area-inset-top,0px);display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (max-width:860px){.out{position:static}}
+.derived{padding:14px 18px}
+.derived h2,.outbox h2{font-size:13px;font-weight:600;margin:0 0 8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px 14px;margin:0}
+.stats div{display:flex;flex-direction:column;border-top:1px solid var(--line);padding-top:6px;min-width:0}
+.stats dt{font-size:11px;color:var(--muted)}
+.stats dd{margin:0;font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums}
+.verdict{margin:10px 0 0;padding:8px 10px;border-radius:6px;background:var(--accent-soft);font-size:12.5px}
+.notes{margin:10px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px}
+.notes li{font-size:12px;color:var(--warn);background:var(--warn-soft);padding:6px 9px;border-radius:6px}
+.notes:empty{display:none}
+
+.outbox{background:var(--out-bg);color:var(--out-fg);border:1px solid var(--out-line);border-radius:10px;padding:14px 16px;min-width:0}
+.outbox h2{color:var(--out-fg)}
+.outbox h2 span{font-family:var(--mono);font-size:11px;color:var(--out-muted);font-weight:400;letter-spacing:.08em;text-transform:uppercase}
+.outbox pre{font-family:var(--mono);font-size:12.5px;line-height:1.6;white-space:pre-wrap;word-break:break-word;margin:0;color:var(--out-fg);max-height:280px;overflow:auto}
+.outbox .ko{font-family:var(--sans);font-size:12.5px;color:var(--out-muted);margin:0 0 10px;padding-bottom:10px;border-bottom:1px dashed var(--out-line)}
+.copy{font:inherit;font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--out-line);background:transparent;color:var(--out-fg);cursor:pointer}
+.copy:hover{border-color:var(--accent);color:var(--accent)}
+.copy.done{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.hint{font-size:12px;color:var(--muted);margin:0}
+.hint a{color:var(--accent)}
+@media (prefers-reduced-motion:no-preference){.copy{transition:background .15s,color .15s}}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+<header>
+  <div>
+    <p class="eyebrow">Exoplanet Concept Sheet</p>
+    <h1>행성 상상도 프롬프트 생성기</h1>
+    <p>행성의 물리량을 입력하면 지표면 상상도와 우주에서 본 외부 상상도용 이미지 생성 프롬프트를 만들어 줍니다. 모든 계산은 이 페이지 안에서만 돌아가며, API 키는 필요 없습니다.</p>
+  </div>
+  <div class="presets" id="presets" aria-label="예시 행성 불러오기"></div>
+</header>
+
+<div class="grid">
+<form class="panel" id="form" autocomplete="off">
+  <fieldset>
+    <legend>기본 성질</legend>
+    <div class="row">
+      <div class="field"><label for="name">행성 이름</label><input type="text" id="name" placeholder="예: Kepler-442b"></div>
+      <div class="field"><label for="ptype">행성 종류</label>
+        <select id="ptype">
+          <option value="rocky">암석 행성 (지구형)</option>
+          <option value="super">슈퍼지구 (큰 암석 행성)</option>
+          <option value="ocean">바다 행성</option>
+          <option value="lava">용암 행성</option>
+          <option value="desert">사막 행성</option>
+          <option value="ice">얼음 행성</option>
+          <option value="gas">가스 거성</option>
+          <option value="icegiant">얼음 거성</option>
+        </select></div>
+      <div class="field"><label for="mass">질량 (지구 = 1)</label><input type="number" id="mass" step="0.01" min="0.001" value="1"></div>
+      <div class="field"><label for="radius">반지름 (지구 = 1)</label><input type="number" id="radius" step="0.01" min="0.01" value="1"></div>
+      <div class="field"><label for="temp">지표면 온도 (°C)</label><input type="number" id="temp" step="1" value="15"><small>가스 행성은 상층 구름 온도</small></div>
+      <div class="field"><label for="pressure">대기압 (기압, atm)</label><input type="number" id="pressure" step="0.01" min="0" value="1"><small>지구 1, 화성 0.006, 금성 92</small></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>대기 성분 (부피 %)</legend>
+    <div class="atm" id="atm"></div>
+    <div class="atm-total" id="atmTotal"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>지표면</legend>
+    <div class="row">
+      <div class="field"><label for="crust">추정 지각 / 암석</label>
+        <select id="crust">
+          <option value="basalt">현무암 (어두운 화산암)</option>
+          <option value="granite">화강암 / 대륙 지각</option>
+          <option value="silicate">규산염 암석 (붉은 산화철)</option>
+          <option value="iron">철·니켈 노출 지각</option>
+          <option value="carbon">탄소 (흑연·다이아몬드)</option>
+          <option value="ice">물 얼음 지각</option>
+          <option value="salt">소금 평원 / 증발암</option>
+          <option value="sulfur">황 / 화산 퇴적물</option>
+          <option value="regolith">회색 레골리스 (달 같은)</option>
+        </select></div>
+      <div class="field"><label for="water">물의 상태</label>
+        <select id="water">
+          <option value="none">없음</option>
+          <option value="ice">얼음으로만 존재</option>
+          <option value="liquid">액체 바다 / 호수</option>
+          <option value="vapor">수증기로만 존재</option>
+        </select></div>
+      <div class="field"><label for="waterPct">물 피복률 (%)</label><input type="number" id="waterPct" min="0" max="100" step="1" value="70"></div>
+      <div class="field"><label for="geology">지질 활동</label>
+        <select id="geology">
+          <option value="dead">없음 (지질학적으로 죽음)</option>
+          <option value="moderate">보통 (판 구조, 간헐적 화산)</option>
+          <option value="active">활발 (화산·지진 상시)</option>
+        </select></div>
+      <div class="field"><label for="clouds">구름 양 (%)</label><input type="number" id="clouds" min="0" max="100" step="5" value="50"></div>
+      <div class="field"><label for="life">생명</label>
+        <select id="life">
+          <option value="none">없음</option>
+          <option value="microbial">미생물 (색깔 있는 매트)</option>
+          <option value="plants">식생</option>
+          <option value="civ">문명</option>
+        </select></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>모항성과 궤도</legend>
+    <div class="row">
+      <div class="field"><label for="star">모항성 분광형</label>
+        <select id="star">
+          <option value="O">O형 (청색 거성)</option>
+          <option value="B">B형 (청백색)</option>
+          <option value="A">A형 (백색)</option>
+          <option value="F">F형 (황백색)</option>
+          <option value="G" selected>G형 (태양 같은 황색)</option>
+          <option value="K">K형 (주황색 왜성)</option>
+          <option value="M">M형 (적색 왜성)</option>
+          <option value="WD">백색 왜성</option>
+          <option value="BIN">쌍성 (태양 둘)</option>
+        </select></div>
+      <div class="field"><label for="au">공전 거리 (AU)</label><input type="number" id="au" step="0.001" min="0.001" value="1"></div>
+      <div class="field"><label for="rotation">자전 주기 (시간)</label><input type="number" id="rotation" step="0.1" min="0" value="24"></div>
+      <div class="field"><label for="moons">위성 수</label><input type="number" id="moons" step="1" min="0" value="1"></div>
+      <div class="field"><label for="magnet">자기장</label>
+        <select id="magnet"><option value="none">없음</option><option value="weak">약함</option><option value="strong" selected>강함</option></select></div>
+      <div class="field">
+        <label>기타</label>
+        <label class="chk"><input type="checkbox" id="tidal">조석 고정 (한쪽 면만 항성을 봄)</label>
+        <label class="chk"><input type="checkbox" id="rings">고리 있음</label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>그림 설정</legend>
+    <div class="row">
+      <div class="field"><label for="style">화풍</label>
+        <select id="style">
+          <option value="photo">사진 같은 실사</option>
+          <option value="concept">영화 컨셉 아트</option>
+          <option value="poster">복고풍 우주여행 포스터</option>
+          <option value="paint">유화 / 수채</option>
+          <option value="nasa">NASA 과학 삽화 풍</option>
+        </select></div>
+      <div class="field"><label for="tod">지표면 시점</label>
+        <select id="tod">
+          <option value="day">한낮</option>
+          <option value="sunset">항성이 지평선에 걸린 때</option>
+          <option value="night">밤</option>
+        </select></div>
+    </div>
+  </fieldset>
+</form>
+
+<div class="out">
+  <section class="panel derived">
+    <h2>파생 수치와 해석</h2>
+    <dl class="stats" id="stats"></dl>
+    <p class="verdict" id="verdict"></p>
+    <ul class="notes" id="notes"></ul>
+  </section>
+
+  <section class="outbox">
+    <h2><span>Surface view</span>지표면 상상도 프롬프트 <button class="copy" type="button" data-copy="surface">복사</button></h2>
+    <p class="ko" id="surfaceKo"></p>
+    <pre id="surface"></pre>
+  </section>
+
+  <section class="outbox">
+    <h2><span>Orbital view</span>외부 상상도 프롬프트 <button class="copy" type="button" data-copy="orbit">복사</button></h2>
+    <p class="ko" id="orbitKo"></p>
+    <pre id="orbit"></pre>
+  </section>
+
+  <section class="outbox">
+    <h2><span>Negative</span>제외할 요소 <button class="copy" type="button" data-copy="negative">복사</button></h2>
+    <pre id="negative"></pre>
+  </section>
+
+  <p class="hint">프롬프트를 복사해서 Midjourney, DALL-E, Bing Image Creator, Stable Diffusion 등 아무 이미지 생성기에 붙여 넣으면 됩니다. 영어 프롬프트가 대부분의 생성기에서 가장 안정적으로 동작합니다.</p>
+</div>
+</div>
+</div>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+
+/* ---------- 데이터 테이블 ---------- */
+const GASES=[
+  ['N2','질소'],['O2','산소'],['CO2','이산화탄소'],['CH4','메탄'],['H2','수소'],
+  ['He','헬륨'],['H2O','수증기'],['SO2','이산화황'],['NH3','암모니아'],['Ar','아르곤']
+];
+const STARS={
+  O:{r:10, light:'harsh, intense blue-white light casting hard black shadows', disk:'blazing blue-white', ko:'강렬한 청백색 빛'},
+  B:{r:5,  light:'bright blue-white light with sharp shadows', disk:'blue-white', ko:'청백색 빛'},
+  A:{r:2,  light:'clean white light with a faint blue cast', disk:'white', ko:'푸른 기 도는 백색광'},
+  F:{r:1.3,light:'bright, slightly cool white light', disk:'bright white', ko:'밝은 백색광'},
+  G:{r:1,  light:'warm yellow-white sunlight', disk:'yellow-white', ko:'따뜻한 황백색 햇빛'},
+  K:{r:0.8,light:'warm orange light with long golden shadows', disk:'orange', ko:'주황빛 햇살'},
+  M:{r:0.3,light:'dim red-orange light with deep crimson shadows, everything tinted ember-red', disk:'deep red', ko:'어둑한 붉은 빛'},
+  WD:{r:0.013,light:'a tiny but blinding white point of light, stark shadows', disk:'tiny blinding white', ko:'작지만 눈부신 백색 점광'},
+  BIN:{r:1,light:'two suns in the sky, every object casting a double shadow', disk:'twin yellow and orange', ko:'두 개의 태양, 이중 그림자'}
+};
+const CRUST={
+  basalt:{en:'dark basalt plains and black volcanic rock',ko:'어두운 현무암 평원'},
+  granite:{en:'grey granite highlands and eroded continental rock',ko:'회색 화강암 고지'},
+  silicate:{en:'rust-red oxidized silicate rock and ochre dust',ko:'붉은 산화철 암석과 황토색 먼지'},
+  iron:{en:'exposed metallic iron-nickel crust, dull grey-brown with a faint metallic sheen',ko:'금속 광택이 도는 철·니켈 지각'},
+  carbon:{en:'black graphite plains with glittering diamond outcrops',ko:'흑연 평원과 반짝이는 다이아몬드 노두'},
+  ice:{en:'cracked water-ice crust, pale blue-white with pressure ridges',ko:'갈라진 물 얼음 지각'},
+  salt:{en:'blinding white salt flats and evaporite crusts',ko:'눈부신 소금 평원'},
+  sulfur:{en:'yellow and orange sulfur deposits around volcanic vents',ko:'황색 황 퇴적물'},
+  regolith:{en:'grey powdery regolith and crater fields, moon-like',ko:'회색 레골리스와 크레이터'}
+};
+const PTYPE={
+  rocky:'a rocky terrestrial exoplanet',super:'a massive super-Earth',ocean:'an ocean world',
+  lava:'a lava world',desert:'an arid desert planet',ice:'a frozen ice world',
+  gas:'a gas giant',icegiant:'an ice giant'
+};
+const PTYPE_KO={rocky:'암석 행성',super:'슈퍼지구',ocean:'바다 행성',lava:'용암 행성',desert:'사막 행성',ice:'얼음 행성',gas:'가스 거성',icegiant:'얼음 거성'};
+const STYLE={
+  photo:{en:'Ultra-detailed photorealistic image',tail:'shot on a wide-angle lens, natural lighting, 8k, highly detailed'},
+  concept:{en:'Cinematic sci-fi concept art',tail:'matte painting, dramatic lighting, epic scale, highly detailed'},
+  poster:{en:'Retro space-tourism travel poster illustration',tail:'flat bold colors, screen-print texture, mid-century style'},
+  paint:{en:'Oil painting',tail:'visible brushwork, luminous color, romantic landscape painting style'},
+  nasa:{en:'Scientific illustration in the style of a space agency artist\'s concept',tail:'accurate, clean, realistic lighting'}
+};
+
+const PRESETS={
+  '지구':{name:'Earth',ptype:'rocky',mass:1,radius:1,temp:15,pressure:1,atm:{N2:78,O2:21,Ar:1},crust:'granite',water:'liquid',waterPct:71,geology:'moderate',clouds:60,life:'civ',star:'G',au:1,rotation:24,moons:1,magnet:'strong',tidal:false,rings:false,style:'photo',tod:'day'},
+  '화성':{name:'Mars',ptype:'desert',mass:0.107,radius:0.532,temp:-63,pressure:0.006,atm:{CO2:95,N2:3,Ar:2},crust:'silicate',water:'ice',waterPct:3,geology:'dead',clouds:5,life:'none',star:'G',au:1.52,rotation:24.6,moons:2,magnet:'none',tidal:false,rings:false,style:'photo',tod:'sunset'},
+  '금성':{name:'Venus',ptype:'rocky',mass:0.815,radius:0.95,temp:464,pressure:92,atm:{CO2:96.5,N2:3.5},crust:'basalt',water:'none',waterPct:0,geology:'active',clouds:100,life:'none',star:'G',au:0.72,rotation:5832,moons:0,magnet:'none',tidal:false,rings:false,style:'concept',tod:'day'},
+  '타이탄형':{name:'Titan-like world',ptype:'ice',mass:0.0225,radius:0.404,temp:-179,pressure:1.45,atm:{N2:95,CH4:5},crust:'ice',water:'ice',waterPct:100,geology:'moderate',clouds:30,life:'none',star:'G',au:9.5,rotation:382,moons:0,magnet:'none',tidal:true,rings:false,style:'concept',tod:'day'},
+  '적색왜성 조석고정':{name:'TRAPPIST-1e',ptype:'rocky',mass:0.69,radius:0.92,temp:5,pressure:1.2,atm:{N2:75,O2:18,CO2:5,H2O:2},crust:'basalt',water:'liquid',waterPct:55,geology:'moderate',clouds:70,life:'plants',star:'M',au:0.029,rotation:146,moons:0,magnet:'weak',tidal:true,rings:false,style:'concept',tod:'sunset'},
+  '뜨거운 목성':{name:'HD 209458 b',ptype:'gas',mass:220,radius:15.5,temp:1100,pressure:1,atm:{H2:85,He:14,H2O:1},crust:'basalt',water:'vapor',waterPct:0,geology:'dead',clouds:90,life:'none',star:'F',au:0.047,rotation:84,moons:0,magnet:'strong',tidal:true,rings:false,style:'nasa',tod:'day'},
+  '용암 슈퍼지구':{name:'55 Cancri e',ptype:'lava',mass:8,radius:1.9,temp:2000,pressure:0.5,atm:{SO2:40,CO2:35,N2:20,H2O:5},crust:'basalt',water:'none',waterPct:0,geology:'active',clouds:20,life:'none',star:'K',au:0.015,rotation:17.7,moons:0,magnet:'weak',tidal:true,rings:false,style:'concept',tod:'day'},
+  '얼음 거성':{name:'Neptune-like',ptype:'icegiant',mass:17,radius:3.9,temp:-200,pressure:1,atm:{H2:80,He:18,CH4:2},crust:'ice',water:'ice',waterPct:0,geology:'dead',clouds:80,life:'none',star:'G',au:30,rotation:16,moons:14,magnet:'strong',tidal:false,rings:true,style:'photo',tod:'day'}
+};
+
+/* ---------- 폼 구성 ---------- */
+const atmBox=$('atm');
+GASES.forEach(([k,ko])=>{
+  const d=document.createElement('div');d.className='field';
+  d.innerHTML=`<label for="g_${k}">${k} <small>${ko}</small></label><input type="number" id="g_${k}" min="0" max="100" step="0.1" value="0">`;
+  atmBox.appendChild(d);
+});
+const presetBox=$('presets');
+Object.keys(PRESETS).forEach(n=>{
+  const b=document.createElement('button');b.type='button';b.textContent=n;
+  b.addEventListener('click',()=>{applyPreset(PRESETS[n]);render();});
+  presetBox.appendChild(b);
+});
+
+function applyPreset(p){
+  ['name','ptype','mass','radius','temp','pressure','crust','water','waterPct','geology','clouds','life','star','au','rotation','moons','magnet','style','tod'].forEach(k=>{$(k).value=p[k];});
+  $('tidal').checked=!!p.tidal;$('rings').checked=!!p.rings;
+  GASES.forEach(([k])=>{$('g_'+k).value=p.atm[k]||0;});
+}
+function readForm(){
+  const v={};
+  ['name','ptype','crust','water','geology','life','star','magnet','style','tod'].forEach(k=>v[k]=$(k).value);
+  ['mass','radius','temp','pressure','waterPct','clouds','au','rotation','moons'].forEach(k=>v[k]=parseFloat($(k).value)||0);
+  v.tidal=$('tidal').checked;v.rings=$('rings').checked;
+  v.atm={};GASES.forEach(([k])=>{v.atm[k]=parseFloat($('g_'+k).value)||0;});
+  return v;
+}
+
+/* ---------- 물리량 계산 ---------- */
+function fmt(n,d){return Number(n).toLocaleString('ko-KR',{maximumFractionDigits:d});}
+function derive(v){
+  const d={};
+  const R=Math.max(v.radius,0.01),M=Math.max(v.mass,0.001);
+  d.g=M/(R*R);                              // 지구 g 배수
+  d.density=M/(R*R*R)*5.51;                 // g/cm³
+  d.vesc=11.19*Math.sqrt(M/R);              // km/s
+  d.tempK=v.temp+273.15;
+  const st=STARS[v.star];
+  d.starSize=st.r/Math.max(v.au,0.001);     // 지구에서 본 태양 대비 겉보기 지름
+  const total=Object.values(v.atm).reduce((a,b)=>a+b,0);
+  d.atmTotal=total;
+  const norm={};Object.keys(v.atm).forEach(k=>norm[k]=total>0?v.atm[k]/total*100:0);
+  d.atm=norm;
+  d.sorted=Object.entries(norm).filter(([,p])=>p>0).sort((a,b)=>b[1]-a[1]);
+  d.dominant=d.sorted.length?d.sorted[0][0]:null;
+  d.gasWorld=v.ptype==='gas'||v.ptype==='icegiant';
+  d.vacuum=v.pressure<0.01;
+  // 액체 물 가능 범위 (단순화: 끓는점은 압력에 따라 상승)
+  const boil=v.pressure<=0?0:100+28*Math.log(Math.max(v.pressure,0.01));
+  d.boil=boil;
+  d.liquidOk=v.temp>0&&v.temp<boil&&v.pressure>=0.01;
+  // 거주 가능성
+  let hab=0;
+  if(v.temp>-20&&v.temp<60)hab++;
+  if(v.pressure>0.3&&v.pressure<10)hab++;
+  if(norm.O2>5)hab++;
+  if(v.water==='liquid')hab++;
+  if(!d.gasWorld)hab++;
+  if(norm.CO2<20&&norm.SO2<5&&norm.NH3<5)hab++;
+  if(v.magnet!=='none')hab++;
+  d.hab=hab;
+  return d;
+}
+
+/* ---------- 묘사 선택 ---------- */
+function skyDesc(v,d){
+  const st=STARS[v.star];const a=d.atm;
+  if(d.gasWorld)return{en:`no solid ground: the viewpoint floats among towering cloud decks, bands of ${v.ptype==='icegiant'?'deep blue and teal methane clouds':'cream, tan and rust-colored ammonia clouds'} stretching to a hazy horizon, lightning flickering deep in the cloud canyons below`,ko:'지면 없음, 거대한 구름층 사이의 시점'};
+  if(d.vacuum)return{en:'an airless pitch-black sky with stars visible even in full daylight, no atmospheric haze, razor-sharp shadows',ko:'대기 없는 칠흑 하늘, 낮에도 별이 보임'};
+  if(a.SO2>10)return{en:'a sickly yellow-brown sulfurous sky, thick acid haze, diffuse glow with no visible sun disk',ko:'누런 황 안개 하늘'};
+  if(a.CO2>60&&v.pressure>5)return{en:'a crushing, opaque yellow-orange sky, light diffused through dense clouds so no star disk is visible, dim amber twilight at noon',ko:'짙은 황적색 하늘, 정오에도 어둑한 호박빛'};
+  if(a.CO2>60)return{en:'a pale butterscotch sky fading to pink near the horizon, fine dust suspended in thin air',ko:'옅은 황갈색 하늘, 지평선 근처 분홍빛'};
+  if(a.CH4>2&&a.N2>50)return{en:'a thick orange photochemical smog sky, soft diffuse light, no sharp shadows',ko:'주황색 탄화수소 안개 하늘'};
+  if(a.NH3>10)return{en:'a hazy pale-yellow ammonia sky',ko:'옅은 노란 암모니아 하늘'};
+  if(a.H2O>20)return{en:'a white, steamy sky heavy with water vapor, everything wrapped in warm fog',ko:'수증기로 뿌연 흰 하늘'};
+  if(a.H2+a.He>60)return{en:'a deep indigo sky thinning to black at the zenith',ko:'짙은 남색 하늘'};
+  // N2/O2 계열: 항성 색과 압력으로 결정
+  let base;
+  if(v.pressure<0.3)base='a thin, dark navy-blue sky deepening to black overhead, stars faintly visible by day';
+  else if(v.pressure>4)base='a pale, milky whitish-blue sky from the thick air, distant hills fading quickly into haze';
+  else base='a clear blue sky';
+  const tint={O:' with a violet cast',B:' with a violet cast',A:'',F:'',G:'',K:' tinged warm orange toward the horizon',M:', dim and salmon-tinted, like perpetual late afternoon',WD:', dark with a single blinding point of light',BIN:' lit by two suns'}[v.star];
+  return{en:base+tint,ko:v.pressure<0.3?'얇고 어두운 남색 하늘':v.pressure>4?'뿌연 희푸른 하늘':'푸른 하늘'+(st.ko?' ('+st.ko+')':'')};
+}
+function starInSky(v,d){
+  const s=d.starSize;const st=STARS[v.star];
+  let size;
+  if(s<0.3)size='the host star is only a small brilliant point';
+  else if(s<0.8)size='the host star appears smaller than our Sun';
+  else if(s<1.5)size='the host star appears about the size of our Sun';
+  else if(s<4)size='the host star looms several times larger than our Sun does from Earth';
+  else size=`an enormous ${st.disk} star fills a huge part of the sky, about ${Math.round(s)} times the apparent size of our Sun`;
+  return size+', '+st.light;
+}
+function terrainDesc(v,d){
+  const c=CRUST[v.crust];const t=v.temp;
+  const parts=[c.en];
+  if(t>1200)parts.push('vast seas of glowing molten rock, rivers of lava, surface rock softened and glowing dull red');
+  else if(t>600)parts.push('scorched ground with glowing orange cracks, no liquid anywhere, heat shimmer');
+  else if(t>150)parts.push('baked, bone-dry rock, no ice and no liquid');
+  else if(t<-150)parts.push('deep-frozen ground, nitrogen and methane frost, brittle ice formations');
+  else if(t<-40)parts.push('permafrost, wind-carved ice, frost coating every surface');
+  // 물
+  if(!d.gasWorld){
+    if(v.water==='liquid'&&v.waterPct>0){
+      const w=v.waterPct;
+      if(w>85)parts.push('a world-spanning ocean with only scattered islands breaking the surface');
+      else if(w>40)parts.push(`a wide ${d.liquidOk?'':'improbable '}sea on the horizon, waves rolling onto the shore`);
+      else parts.push('a shallow lake or inland sea in the middle distance');
+      if(t<0)parts.push('(the water is somehow liquid despite the cold)');
+    }else if(v.water==='ice'&&v.waterPct>0){
+      parts.push(v.waterPct>60?'glaciers and ice sheets covering most of the land':'ice caps and frozen lakes');
+    }else if(v.water==='vapor'){parts.push('wisps of steam venting from the ground');}
+  }
+  // 중력
+  if(d.g<0.4)parts.push('low gravity: tall, spindly rock pillars and towering cliffs that could not stand on Earth');
+  else if(d.g>2)parts.push('crushing high gravity: a flat, low landscape with squat, rounded hills, no tall formations');
+  // 지질
+  if(v.geology==='active')parts.push('erupting volcanoes on the horizon, ash plumes, fresh lava flows');
+  else if(v.geology==='moderate')parts.push('a distant mountain range and old volcanic cones');
+  else parts.push('ancient, heavily cratered, geologically dead terrain');
+  return parts;
+}
+function weatherDesc(v,d){
+  if(d.gasWorld||d.vacuum)return null;
+  const parts=[];
+  if(v.clouds>80)parts.push('overcast sky, thick cloud cover');
+  else if(v.clouds>40)parts.push('scattered clouds');
+  else if(v.clouds>10)parts.push('a few thin clouds');
+  else parts.push('cloudless sky');
+  if(v.pressure>10)parts.push('heavy, soupy atmosphere');
+  if(v.tidal)parts.push('permanent winds blowing from the day side toward the frozen night side');
+  if(d.atm.CH4>2&&v.temp<-150)parts.push('methane rain and dark hydrocarbon lakes');
+  if(v.magnet!=='none'&&(v.star==='M'||v.star==='K'))parts.push('faint auroras shimmering near the horizon');
+  return parts.join(', ');
+}
+function lifeDesc(v){
+  return{none:'no life, no vegetation, no structures',microbial:'colorful microbial mats and slime staining the rocks in orange and green',plants:'alien vegetation adapted to the local light, strange leaf colors, no Earth plants',civ:'an alien city of unfamiliar architecture in the distance, lights, structures following the terrain'}[v.life];
+}
+function lifeKo(v){return{none:'생명 없음',microbial:'미생물 매트',plants:'외계 식생',civ:'문명 도시'}[v.life];}
+function todDesc(v,d){
+  if(v.tidal&&v.tod!=='night')return v.tod==='sunset'?'viewed from the terminator zone, the star sitting forever on the horizon in an endless sunset':'the star hangs motionless at the same spot in the sky, never setting';
+  return{day:'midday light',sunset:'the star low on the horizon, long shadows, sky gradient',night:'night, the surface lit only by '+(v.moons>0?(v.moons===1?'a single moon':v.moons+' moons')+' and starlight':'starlight')}[v.tod];
+}
+function globeColor(v,d){
+  const a=d.atm;
+  if(v.ptype==='gas')return a.CH4>1?'banded in teal and deep blue with white high clouds':'banded in cream, tan, salmon and rust-brown ammonia clouds, with swirling storm ovals';
+  if(v.ptype==='icegiant')return 'a smooth, deep azure-blue globe with faint bands and bright white methane cloud streaks';
+  const parts=[];
+  if(v.temp>1200)parts.push('a black globe veined with glowing orange-red lava cracks and bright magma seas');
+  else{
+    const crustCol={basalt:'dark charcoal-grey',granite:'grey and tan',silicate:'rust-red and ochre',iron:'dull metallic grey-brown',carbon:'jet black with glittering specks',ice:'pale blue-white',salt:'blinding white',sulfur:'yellow and orange mottled',regolith:'grey, crater-pocked'}[v.crust];
+    parts.push(crustCol+' land');
+  }
+  if(v.water==='liquid'&&v.waterPct>0)parts.push(v.waterPct>85?'almost entirely covered by a deep blue ocean':`deep blue oceans covering about ${v.waterPct}% of the surface`);
+  if(v.water==='ice'&&v.waterPct>0)parts.push(v.waterPct>60?'wrapped in white ice sheets':'white polar ice caps');
+  if(v.life==='plants')parts.push('continents tinted by alien vegetation');
+  if(d.atm.CO2>60&&v.pressure>5)parts.push('completely hidden under a featureless pale-yellow cloud blanket');
+  else if(d.atm.CH4>2&&d.atm.N2>50)parts.push('wrapped in an opaque orange haze');
+  else if(v.clouds>0&&!d.vacuum)parts.push(v.clouds>80?'almost entirely cloud-covered, white swirling storm systems':v.clouds>40?'swirling white cloud bands and cyclones':'thin scattered white clouds');
+  return parts.join(', ');
+}
+function limbDesc(v,d){
+  if(d.vacuum)return 'a crisp, airless edge with no atmospheric glow';
+  if(v.pressure>10||d.gasWorld)return 'a thick, soft, glowing atmospheric halo on the limb';
+  if(v.pressure>0.3)return 'a thin bright blue-white atmospheric glow along the limb';
+  return 'a very faint, thin atmospheric line on the limb';
+}
+
+/* ---------- 프롬프트 조립 ---------- */
+function build(v,d){
+  const st=STYLE[v.style];
+  const name=v.name.trim()||'an unnamed exoplanet';
+  const sky=skyDesc(v,d);
+  const terrain=terrainDesc(v,d);
+  const weather=weatherDesc(v,d);
+  const surfaceParts=[
+    `${st.en} of the surface of ${name}, ${PTYPE[v.ptype]}.`,
+    (d.gasWorld?sky.en+'.':`Foreground: ${terrain.join('; ')}.`),
+    (d.gasWorld?'':`Sky: ${sky.en}.`),
+    `Light: ${starInSky(v,d)}.`,
+    weather?`Weather: ${weather}.`:'',
+    `${lifeDesc(v)}.`,
+    `${todDesc(v,d)}.`,
+    v.moons>0&&v.tod!=='night'?`${v.moons===1?'A moon':v.moons+' moons'} faintly visible in the sky.`:'',
+    v.rings?'The planet\'s own ring system arcs across the sky as a thin bright band.':'',
+    `${st.tail}, wide landscape composition, no text, no people. --ar 16:9`
+  ].filter(Boolean);
+
+  const orbitParts=[
+    `${st.en} of ${name}, ${PTYPE[v.ptype]}, seen from space.`,
+    `The globe is ${globeColor(v,d)}, with ${limbDesc(v,d)}.`,
+    v.tidal?'One hemisphere is permanently lit, the terminator line dividing a sunlit day side from a dark frozen night side.':'A sharp terminator divides the day and night sides.',
+    v.life==='civ'?'The night side glitters with the lights of cities.':'',
+    v.magnet==='strong'&&!d.vacuum?'Faint auroral rings glow over the poles.':'',
+    v.rings?'A broad, bright ring system encircles the planet, casting a thin shadow on the globe.':'',
+    v.moons>0?`${v.moons===1?'A single moon':v.moons>5?'Several moons':v.moons+' moons'} orbit nearby.`:'',
+    `The host star, ${STARS[v.star].disk}, ${d.starSize>2?'enormous and close, lighting the planet with '+STARS[v.star].light:'off-frame, lighting the planet with '+STARS[v.star].light}.`,
+    d.g>2?'The planet looks noticeably large and massive.':'',
+    `Black space with faint stars in the background, ${st.tail}, no text. --ar 16:9`
+  ].filter(Boolean);
+
+  const neg=['text','watermark','logo','people','astronaut','spaceship','cartoon','low quality','blurry','Earth continents','recognizable Earth map',
+    d.vacuum?'clouds, blue sky':'', v.water!=='liquid'?'liquid water, ocean':'', v.life==='none'?'plants, trees, animals, buildings':'',
+    d.gasWorld?'solid ground, rocks, mountains':''].filter(Boolean).join(', ');
+
+  const surfaceKo=`${PTYPE_KO[v.ptype]} 지표면. ${d.gasWorld?'지면 없이 구름층 사이 시점':CRUST[v.crust].ko}. 하늘: ${sky.ko}. 빛: ${STARS[v.star].ko}. ${lifeKo(v)}.`;
+  const orbitKo=`우주에서 본 ${PTYPE_KO[v.ptype]}. ${v.water==='liquid'?'푸른 바다':v.water==='ice'?'얼음':'물 없음'}, 구름 ${v.clouds}%${v.rings?', 고리':''}${v.moons?', 위성 '+v.moons+'개':''}${v.tidal?', 조석 고정':''}.`;
+  const cap=p=>p.map(x=>x.charAt(0).toUpperCase()+x.slice(1)).join(' ');
+  return{surface:cap(surfaceParts),orbit:cap(orbitParts),negative:neg,surfaceKo,orbitKo};
+}
+
+/* ---------- 출력 ---------- */
+function render(){
+  const v=readForm();const d=derive(v);
+  const tot=$('atmTotal');
+  tot.textContent=d.atmTotal===0?'성분이 비어 있음. 입력하지 않으면 대기 없음으로 봅니다.':`합계 ${fmt(d.atmTotal,1)}% ${Math.abs(d.atmTotal-100)>0.5?'(100%로 자동 정규화)':''}`;
+  tot.classList.toggle('bad',Math.abs(d.atmTotal-100)>0.5&&d.atmTotal>0);
+
+  const comp=d.sorted.slice(0,3).map(([k,p])=>`${k} ${fmt(p,0)}%`).join(' · ')||'없음';
+  const stats=[
+    ['표면 중력',fmt(d.g,2)+' g'],['평균 밀도',fmt(d.density,2)+' g/cm³'],['탈출 속도',fmt(d.vesc,1)+' km/s'],
+    ['표면 온도',fmt(d.tempK,0)+' K'],['항성 겉보기 크기','태양의 '+fmt(d.starSize,2)+'배'],['주요 대기',comp],
+    ['물 끓는점',v.pressure>=0.01?fmt(d.boil,0)+' °C':'액체 불가'],['자전',v.rotation>0?fmt(v.rotation,1)+'시간'+(v.tidal?' (조석 고정)':''):'—']
+  ];
+  $('stats').innerHTML=stats.map(([k,val])=>`<div><dt>${k}</dt><dd>${val}</dd></div>`).join('');
+
+  const habTxt=d.gasWorld?'가스 행성이라 지표면이 없습니다. 지표면 상상도는 구름층 사이 시점으로 만듭니다.':
+    d.hab>=6?'지구형 생명에게 거주 가능해 보이는 조건입니다.':d.hab>=4?'조건이 일부 맞습니다. 특수한 생명이라면 가능할 수 있습니다.':'지구형 생명이 살기 어려운 환경입니다.';
+  $('verdict').textContent=`거주 가능성 점수 ${d.hab}/7. ${habTxt}`;
+
+  const notes=[];
+  if(v.water==='liquid'&&!d.liquidOk&&!d.gasWorld)notes.push(`이 온도와 기압에서는 액체 물이 안정적으로 존재하기 어렵습니다 (끓는점 약 ${fmt(d.boil,0)}°C). 프롬프트에는 그대로 반영했습니다.`);
+  if(d.atm.O2>15&&v.life==='none')notes.push('산소가 많은데 생명이 없는 설정입니다. 실제로는 산소가 암석과 반응해 사라지므로 비현실적일 수 있습니다.');
+  if((d.atm.H2+d.atm.He)>30&&!d.gasWorld&&d.vesc<15)notes.push('질량이 작은 행성은 수소·헬륨을 붙잡아 두지 못합니다 (탈출 속도가 낮음).');
+  if(d.gasWorld&&d.density>3)notes.push('가스 행성치고 밀도가 너무 높습니다. 반지름을 키우거나 질량을 줄여 보세요.');
+  if(!d.gasWorld&&d.density<2)notes.push('암석 행성치고 밀도가 너무 낮습니다. 얼음이나 두꺼운 대기가 대부분인 세계일 수 있습니다.');
+  if(v.temp>1000&&v.water!=='none'&&v.water!=='vapor')notes.push('이 온도에서 물은 수증기 상태만 가능합니다.');
+  if(v.star==='M'&&v.au>0.3)notes.push('적색 왜성은 어두워서 이 거리면 매우 추운 행성이 됩니다.');
+  if(d.vacuum&&v.clouds>0)notes.push('대기가 거의 없으면 구름이 생기지 않아 프롬프트에서 구름을 뺐습니다.');
+  $('notes').innerHTML=notes.map(n=>`<li>${n}</li>`).join('');
+
+  const p=build(v,d);
+  $('surface').textContent=p.surface;$('orbit').textContent=p.orbit;$('negative').textContent=p.negative;
+  $('surfaceKo').textContent=p.surfaceKo;$('orbitKo').textContent=p.orbitKo;
+  try{localStorage.setItem('planet-prompt-v1',JSON.stringify(v));}catch(e){}
+}
+
+/* ---------- 복사 ---------- */
+document.querySelectorAll('.copy').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const el=$(btn.dataset.copy);const text=el.textContent;
+    const done=()=>{btn.textContent='복사됨';btn.classList.add('done');setTimeout(()=>{btn.textContent='복사';btn.classList.remove('done');},1500);};
+    const fallback=()=>{const r=document.createRange();r.selectNodeContents(el);const s=window.getSelection();s.removeAllRanges();s.addRange(r);btn.textContent='드래그해서 복사';};
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done).catch(fallback);}else fallback();
+  });
+});
+
+/* ---------- 시작 ---------- */
+let saved=null;
+try{saved=JSON.parse(localStorage.getItem('planet-prompt-v1'));}catch(e){}
+if(saved&&saved.atm){applyPreset(saved);}else{applyPreset(PRESETS['적색왜성 조석고정']);}
+$('form').addEventListener('input',render);
+$('form').addEventListener('change',render);
+$('form').addEventListener('submit',e=>e.preventDefault());
+render();
+})();
+</script>
+
+</body>
+</html>
